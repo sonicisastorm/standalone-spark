@@ -4,7 +4,7 @@ FROM python:3.10-slim
 RUN apt-get update && \
     mkdir -p /usr/share/man/man1 && \
     apt-get install -y --no-install-recommends \
-    openjdk-17-jdk \
+    openjdk-17-jdk-headless \
     libzbar-dev \
     bash \
     gcc \
