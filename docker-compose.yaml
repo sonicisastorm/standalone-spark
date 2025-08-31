@@ -1,14 +1,15 @@
 version: '3.8'
+
 services:
+  # ------------------------
+  # Spark Master
+  # ------------------------
   spark-master:
     container_name: spark-master
-    deploy:
-        resources:
-            limits:
-              cpus: '1'
-              memory: "2g"
     build:
       context: ./Spark
+    command: sh spark-master.sh
+    image: spark-master:latest
     ports:
       - "4040:4040"
       - "7077:7077"
@@ -16,70 +17,124 @@ services:
       - "18080:18080"
     networks:
       - spark-net
-    command: sh spark-master.sh
 
+  # ------------------------
+  # Spark Worker
+  # ------------------------
   spark-worker:
-    deploy:
-        resources:
-            limits:
-              cpus: '1'
-              memory: "2g"
     build:
       context: ./Spark
+    command: sh spark-worker.sh
     depends_on:
       - spark-master
     ports:
       - "8081-8089:8081"
     networks:
       - spark-net
-    command: sh spark-worker.sh
+    image: spark-base:latest
 
+  # ------------------------
+  # Spark Client (Jupyter etc.)
+  # ------------------------
   spark-client:
     container_name: spark-client
-    deploy:
-        resources:
-            limits:
-              cpus: '1'
-              memory: "2g"
     build:
       context: ./spark-client
     ports:
       - "8888:8888"
       - "4041:4040"
-    networks:
-      - spark-net
     volumes:
       - ./spark_client/examples:/opt/examples
+    networks:
+      - spark-net
+    image: spark-client:latest
 
-# S3 compatible object storage: MinIO
+  # ------------------------
+  # Zookeeper
+  # ------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - spark-net
+
+  # ------------------------
+  # Kafka
+  # ------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - spark-net
+
+  # ------------------------
+  # Schema Registry
+  # ------------------------
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+    networks:
+      - spark-net
+
+  # ------------------------
+  # Postgres
+  # ------------------------
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sparkdb
+    ports:
+      - "5432:5432"
+    networks:
+      - spark-net
+
+  # ------------------------
+  # MinIO (S3 Compatible Storage)
+  # ------------------------
   minio:
     container_name: minio
-    deploy:
-        resources:
-            limits:
-              cpus: '1'
-              memory: "2g"
-    image: "minio/minio:RELEASE.2023-05-04T21-44-30Z"
+    image: minio/minio:RELEASE.2023-05-04T21-44-30Z
     volumes:
       - minio:/data
     ports:
       - "9000:9000"
       - "9001:9001"
-    networks:
-      - spark-net
     environment:
       MINIO_ACCESS_KEY: "telcoaz"
       MINIO_SECRET_KEY: "Telco12345"
     command: server /data --console-address ":9001"
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live" ]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+    networks:
+      - spark-net
+
+# ------------------------
+# Volumes
+# ------------------------
 volumes:
    minio:
       driver: local
 
+# ------------------------
+# Networks
+# ------------------------
 networks:
   spark-net:
-    external: true
+    driver: bridge

@@ -1,9 +1,8 @@
 #!/bin/bash
+echo "Starting Spark History Server..."
+/opt/spark/sbin/start-history-server.sh
 
-echo "History server is starting ...."
-
-start-history-server.sh
-
-echo "$(hostname -i) spark-master" >> /etc/hosts
-
-/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --ip 0.0.0.0 --port 7077 --webui-port 8080
+/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master \
+  --host spark-master \
+  --port 7077 \
+  --webui-port 8080
